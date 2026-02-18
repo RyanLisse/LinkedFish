@@ -37,7 +37,7 @@ struct GlobalOptions: ParsableArguments {
 
 struct Auth: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Authenticate with LinkedIn"
+        abstract: "Authenticate with LinkedIn and configure TinyFish API key"
     )
 
     @Argument(help: "The li_at cookie value from your browser")
@@ -58,8 +58,41 @@ struct Auth: AsyncParsableCommand {
     @Flag(name: .long, help: "List available browsers and profiles")
     var listBrowsers: Bool = false
 
+    @Option(name: .long, help: "TinyFish API key")
+    var apiKey: String?
+
+    @Flag(name: .long, help: "Clear TinyFish API key")
+    var clearApiKey: Bool = false
+
+    @Flag(name: .long, help: "Show stored TinyFish API key")
+    var showApiKey: Bool = false
+
     func run() async throws {
         let store = CredentialStore()
+
+        // Handle --clear-api-key flag
+        if clearApiKey {
+            try store.deleteAPIKey()
+            print("✓ TinyFish API key cleared")
+            return
+        }
+
+        // Handle --show-api-key flag
+        if showApiKey {
+            if let key = try store.loadAPIKey() {
+                print("TinyFish API Key: \(String(key.prefix(8)))...")
+            } else {
+                print("No TinyFish API key stored")
+            }
+            return
+        }
+
+        // Handle --api-key option
+        if let key = apiKey {
+            try store.saveAPIKey(key)
+            print("✓ TinyFish API key saved")
+            return
+        }
 
         // Handle --clear flag
         if clear {
@@ -131,7 +164,7 @@ struct Auth: AsyncParsableCommand {
             print("✓ Cookie extracted and saved to keychain")
 
             // Verify it works
-            let client = await createClient(cookie: cookieValue)
+            let client = try await createClient(cookie: cookieValue)
             let status = try await client.verifyAuth()
 
             if status.valid {
@@ -171,7 +204,7 @@ struct Auth: AsyncParsableCommand {
         print("✓ Cookie saved to keychain")
 
         // Verify it works
-        let client = await createClient(cookie: cookieValue)
+        let client = try await createClient(cookie: cookieValue)
         let status = try await client.verifyAuth()
 
         if status.valid {
@@ -268,31 +301,41 @@ struct Status: AsyncParsableCommand {
     func run() async throws {
         let store = CredentialStore()
         let cookie = try options.cookie ?? store.loadCookie()
-        
-        guard let cookie = cookie else {
-            if options.json {
-                print(#"{"authenticated": false, "message": "No cookie configured"}"#)
+        let hasApiKey = store.hasAPIKey()
+
+        if options.json {
+            if let cookie = cookie {
+                let client = try await createClient(cookie: cookie)
+                let status = try await client.verifyAuth()
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                let data = try encoder.encode(status)
+                print(String(data: data, encoding: .utf8)!)
             } else {
-                print("✗ Not authenticated")
-                print("  Run 'linkedin auth' to configure")
+                print(#"{"authenticated": false, "tinyfishApiKey": \#(hasApiKey), "message": "No cookie configured"}"#)
             }
             return
         }
-        
-        let client = await createClient(cookie: cookie)
-        let status = try await client.verifyAuth()
-        
-        if options.json {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(status)
-            print(String(data: data, encoding: .utf8)!)
-        } else {
+
+        // LinkedIn status
+        if let cookie = cookie {
+            let client = try await createClient(cookie: cookie)
+            let status = try await client.verifyAuth()
             if status.valid {
-                print("✓ Authenticated")
+                print("LinkedIn: ✓ Authenticated (cookie stored)")
             } else {
-                print("✗ \(status.message)")
+                print("LinkedIn: ✗ \(status.message)")
             }
+        } else {
+            print("LinkedIn: ✗ Not authenticated")
+            print("          Run 'linkedin auth' to configure")
+        }
+
+        // TinyFish status
+        if hasApiKey {
+            print("TinyFish: ✓ API key configured")
+        } else {
+            print("TinyFish: ✗ No API key (run: linkedin auth --api-key YOUR_KEY)")
         }
     }
 }
@@ -778,7 +821,7 @@ func getAuthenticatedClient(options: GlobalOptions) async throws -> LinkedInClie
         throw ValidationError("Not authenticated. Run 'linkedin auth' to configure.")
     }
     
-    let client = await createClient(cookie: cookie)
+    let client = try await createClient(cookie: cookie)
     return client
 }
 
@@ -786,7 +829,7 @@ func getMessagingClient(options: GlobalOptions, browserMode: Bool) async throws 
     if browserMode {
         let store = CredentialStore()
         let cookie = try options.cookie ?? store.loadCookie()
-        let client = await createClient(cookie: cookie)
+        let client = try await createClient(cookie: cookie)
         await client.setPreferPeekabooMessaging(true)
         return client
     }

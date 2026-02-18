@@ -309,3 +309,24 @@ public struct InboxMessage: Codable, Sendable {
         self.timestamp = timestamp
     }
 }
+
+// MARK: - Vision Element
+//
+// Lightweight representation of an accessibility element captured by
+// Peekaboo screen-scraping. Retained in Models for test compatibility
+// with `LinkedInClient.parseConversationsFromVision` and
+// `LinkedInClient.parseMessagesFromVision`.
+
+public struct VisionElement: Sendable {
+    public let id: String
+    public let label: String
+    public let role: String?
+    public let bounds: [String: Double]?
+
+    public init(id: String, label: String, role: String?, bounds: [String: Double]?) {
+        self.id = id
+        self.label = label
+        self.role = role
+        self.bounds = bounds
+    }
+}

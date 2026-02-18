@@ -15,7 +15,6 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.5.0"),
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk", from: "0.9.0"),
         .package(url: "https://github.com/apple/swift-log", from: "1.6.0"),
-        .package(url: "https://github.com/scinfu/SwiftSoup", from: "2.7.0"),
         .package(url: "https://github.com/steipete/SweetCookieKit", from: "0.3.0"),
     ],
     targets: [
@@ -23,7 +22,6 @@ let package = Package(
             name: "LinkLion",
             dependencies: [
                 .product(name: "Logging", package: "swift-log"),
-                .product(name: "SwiftSoup", package: "SwiftSoup"),
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6)

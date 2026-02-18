@@ -5,6 +5,7 @@ import Security
 public struct CredentialStore: Sendable {
     private static let serviceName = "com.linkedinkit.credentials"
     private static let cookieKey = "li_at_cookie"
+    private static let apiKeyAccount = "tinyfish_api_key"
     
     public init() {}
     
@@ -83,6 +84,83 @@ public struct CredentialStore: Sendable {
     public func hasCookie() -> Bool {
         do {
             return try loadCookie() != nil
+        } catch {
+            return false
+        }
+    }
+
+    // MARK: - TinyFish API Key
+
+    /// Save the TinyFish API key to Keychain
+    public func saveAPIKey(_ key: String) throws {
+        // Delete any existing item first
+        try? deleteAPIKey()
+
+        guard let data = key.data(using: .utf8) else {
+            throw CredentialError.invalidData
+        }
+
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.serviceName,
+            kSecAttrAccount as String: Self.apiKeyAccount,
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlocked,
+        ]
+
+        let status = SecItemAdd(query as CFDictionary, nil)
+
+        guard status == errSecSuccess else {
+            throw CredentialError.keychainError(status)
+        }
+    }
+
+    /// Load the TinyFish API key from Keychain, falling back to TINYFISH_API_KEY env var
+    public func loadAPIKey() throws -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.serviceName,
+            kSecAttrAccount as String: Self.apiKeyAccount,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+
+        if status == errSecSuccess,
+           let data = result as? Data,
+           let key = String(data: data, encoding: .utf8) {
+            return key
+        }
+
+        if status != errSecItemNotFound && status != errSecSuccess {
+            throw CredentialError.keychainError(status)
+        }
+
+        // Fall back to environment variable
+        return ProcessInfo.processInfo.environment["TINYFISH_API_KEY"]
+    }
+
+    /// Delete the TinyFish API key from Keychain
+    public func deleteAPIKey() throws {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.serviceName,
+            kSecAttrAccount as String: Self.apiKeyAccount,
+        ]
+
+        let status = SecItemDelete(query as CFDictionary)
+
+        if status != errSecSuccess && status != errSecItemNotFound {
+            throw CredentialError.keychainError(status)
+        }
+    }
+
+    /// Check if a TinyFish API key is configured (Keychain or env var)
+    public func hasAPIKey() -> Bool {
+        do {
+            return try loadAPIKey() != nil
         } catch {
             return false
         }
