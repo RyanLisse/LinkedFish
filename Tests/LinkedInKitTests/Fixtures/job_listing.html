@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Job Search Results | LinkedIn</title>
+</head>
+<body>
+<main>
+  <div class="jobs-search-results-list">
+    <!-- Job card 1: using div.base-card with a[href*=/jobs/view/] -->
+    <div class="base-card" data-entity-urn="urn:li:jobPosting:3901234567">
+      <a href="https://www.linkedin.com/jobs/view/3901234567/">
+        <span class="base-search-card__title">Senior iOS Developer</span>
+      </a>
+      <a href="https://www.linkedin.com/company/apple/" class="base-search-card__subtitle">Apple</a>
+      <div class="base-search-card__metadata">
+        <span>Cupertino, CA</span>
+      </div>
+      <time datetime="2024-01-15">2 days ago</time>
+      <div class="base-search-card__salary">$180,000 - $250,000/yr</div>
+      <span data-is-easy-apply-job="true"></span>
+    </div>
+
+    <!-- Job card 2: using div.job-search-card -->
+    <div class="job-search-card" data-entity-urn="urn:li:jobPosting:3902345678">
+      <a href="https://www.linkedin.com/jobs/view/3902345678/">
+        <h3 class="job-search-card__title">Backend Engineer</h3>
+      </a>
+      <h4><a href="https://www.linkedin.com/company/google/">Google</a></h4>
+      <span class="job-search-card__location">Mountain View, CA</span>
+      <span class="job-search-card__listdate">1 week ago</span>
+      <span class="job-search-card__salary-info">$160,000 - $220,000/yr</span>
+    </div>
+
+    <!-- Job card 3: using li.jobs-search-results__list-item -->
+    <li class="jobs-search-results__list-item" data-entity-urn="urn:li:jobPosting:3903456789">
+      <a href="https://www.linkedin.com/jobs/view/3903456789/">
+        <h3 class="base-search-card__title">ML Engineer</h3>
+      </a>
+      <a href="https://www.linkedin.com/company/meta/" class="base-search-card__subtitle">Meta</a>
+      <div class="base-search-card__metadata">
+        <span>Menlo Park, CA (Remote)</span>
+      </div>
+      <time datetime="2024-01-10">1 week ago</time>
+      <div class="job-search-card__easy-apply-button">Easy Apply</div>
+    </li>
+
+    <!-- Job card 4: data attribute based (for the fallback parser) -->
+    <div data-entity-urn="urn:li:jobPosting:3904567890">
+      <a href="https://www.linkedin.com/jobs/view/3904567890/">
+        <h3 class="job-card-list__title">DevOps Engineer</h3>
+      </a>
+      <span class="job-card-container__company-name">Netflix</span>
+      <span class="job-card-container__metadata-item">Los Gatos, CA</span>
+    </div>
+  </div>
+</main>
+</body>
+</html>

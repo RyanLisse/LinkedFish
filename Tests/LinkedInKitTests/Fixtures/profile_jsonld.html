@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>John Doe | LinkedIn</title>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Person",
+  "name": "John Doe",
+  "jobTitle": "Senior Software Engineer",
+  "worksFor": {"@type": "Organization", "name": "Acme Corp"},
+  "address": {"@type": "PostalAddress", "addressLocality": "San Francisco, California"},
+  "alumniOf": [{"@type": "EducationalOrganization", "name": "MIT"}],
+  "knowsAbout": ["Swift", "iOS", "Machine Learning"],
+  "url": "https://www.linkedin.com/in/johndoe",
+  "image": {"@type": "ImageObject", "contentUrl": "https://media.licdn.com/dms/image/test/photo.jpg"},
+  "description": "Passionate about building great software"
+}
+</script>
+</head>
+<body>
+<main>
+  <!-- Headline (matches .text-body-medium.break-words) -->
+  <div class="pv-text-details__left-panel">
+    <div class="text-body-medium break-words">Senior Software Engineer at Acme Corp</div>
+  </div>
+
+  <!-- About section (matches #about ~ .display-flex .inline-show-more-text) -->
+  <section id="about"></section>
+  <div class="display-flex">
+    <div class="inline-show-more-text">Passionate about building great software. Over 10 years of experience in iOS development.</div>
+  </div>
+
+  <!-- Experience section: parent div isolates the li items -->
+  <div>
+    <section id="experience"></section>
+    <ul>
+      <li class="artdeco-list__item">
+        <div class="t-bold"><span aria-hidden="true">Senior Software Engineer</span></div>
+        <div class="t-normal"><span aria-hidden="true">Acme Corp</span></div>
+        <div class="t-black--light"><span aria-hidden="true">Jan 2020 - Present · 4 yrs</span></div>
+        <div class="t-black--light t-normal"><span aria-hidden="true">San Francisco, CA</span></div>
+        <div class="inline-show-more-text">Led iOS team of 8 engineers building the flagship mobile app.</div>
+      </li>
+      <li class="artdeco-list__item">
+        <div class="t-bold"><span aria-hidden="true">Software Engineer</span></div>
+        <div class="t-normal"><span aria-hidden="true">StartupCo</span></div>
+        <div class="t-black--light"><span aria-hidden="true">Jun 2017 - Dec 2019 · 2 yrs 7 mos</span></div>
+        <div class="t-black--light t-normal"><span aria-hidden="true">New York, NY</span></div>
+      </li>
+    </ul>
+  </div>
+
+  <!-- Education section: parent div isolates the li items -->
+  <div>
+    <section id="education"></section>
+    <ul>
+      <li class="artdeco-list__item">
+        <div class="t-bold"><span aria-hidden="true">MIT</span></div>
+        <div class="t-normal"><span aria-hidden="true">BS Computer Science</span></div>
+        <div class="t-black--light"><span aria-hidden="true">2013 - 2017</span></div>
+      </li>
+    </ul>
+  </div>
+
+  <!-- Skills section: parent div isolates the li items -->
+  <div>
+    <section id="skills"></section>
+    <ul>
+      <li><div class="t-bold"><span aria-hidden="true">Swift</span></div></li>
+      <li><div class="t-bold"><span aria-hidden="true">iOS Development</span></div></li>
+      <li><div class="t-bold"><span aria-hidden="true">Machine Learning</span></div></li>
+      <li><div class="t-bold"><span aria-hidden="true">Python</span></div></li>
+    </ul>
+  </div>
+
+  <!-- Connection/follower counts -->
+  <span class="t-bold">500+ connections</span>
+  <span class="t-bold">1,234 followers</span>
+</main>
+</body>
+</html>

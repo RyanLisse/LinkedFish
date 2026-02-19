@@ -272,10 +272,12 @@ public actor LinkedInClient {
         
         logger.info("Sending invite to: \(profileUrn)")
         
+        let csrfToken = generateCSRFToken()
         let url = Self.buildInviteURL()
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.setValue("li_at=\(cookie)", forHTTPHeaderField: "Cookie")
+        request.setValue("li_at=\(cookie); JSESSIONID=\"\(csrfToken)\"", forHTTPHeaderField: "Cookie")
+        request.setValue("ajax:\(csrfToken)", forHTTPHeaderField: "csrf-token")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/vnd.linkedin.normalized+json+2.1", forHTTPHeaderField: "Accept")
         request.setValue("2.0.0", forHTTPHeaderField: "X-RestLi-Protocol-Version")
@@ -316,10 +318,12 @@ public actor LinkedInClient {
         
         logger.info("Sending message to: \(profileUrn)")
         
+        let csrfToken = generateCSRFToken()
         let url = Self.buildMessageURL()
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.setValue("li_at=\(cookie)", forHTTPHeaderField: "Cookie")
+        request.setValue("li_at=\(cookie); JSESSIONID=\"\(csrfToken)\"", forHTTPHeaderField: "Cookie")
+        request.setValue("ajax:\(csrfToken)", forHTTPHeaderField: "csrf-token")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/vnd.linkedin.normalized+json+2.1", forHTTPHeaderField: "Accept")
         request.setValue("2.0.0", forHTTPHeaderField: "X-RestLi-Protocol-Version")

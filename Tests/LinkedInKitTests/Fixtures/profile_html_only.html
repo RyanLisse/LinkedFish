@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Jane Smith | LinkedIn</title>
+</head>
+<body>
+<main>
+  <!-- Name from h1 (matches doc.select("h1").first()) -->
+  <h1>Jane Smith</h1>
+
+  <!-- Headline (matches .text-body-medium.break-words) -->
+  <div class="text-body-medium break-words">Product Manager at TechGiant</div>
+
+  <!-- Location (matches .text-body-small.inline.t-black--light.break-words) -->
+  <div class="text-body-small inline t-black--light break-words">Seattle, Washington</div>
+
+  <!-- About section (matches #about ~ .display-flex .inline-show-more-text) -->
+  <section id="about"></section>
+  <div class="display-flex">
+    <div class="inline-show-more-text">Experienced product manager with a passion for building user-centric products that scale.</div>
+  </div>
+
+  <!-- Experience section -->
+  <section id="experience">
+    <div>
+      <ul>
+        <li class="artdeco-list__item">
+          <div class="t-bold"><span aria-hidden="true">Senior Product Manager</span></div>
+          <div class="t-normal"><span aria-hidden="true">TechGiant</span></div>
+          <div class="t-black--light"><span aria-hidden="true">Mar 2021 - Present · 3 yrs</span></div>
+          <div class="t-black--light t-normal"><span aria-hidden="true">Seattle, WA</span></div>
+          <div class="inline-show-more-text">Leading product strategy for the core platform team.</div>
+        </li>
+        <li class="artdeco-list__item">
+          <div class="t-bold"><span aria-hidden="true">Product Manager</span></div>
+          <div class="t-normal"><span aria-hidden="true">MidCo</span></div>
+          <div class="t-black--light"><span aria-hidden="true">Jan 2018 - Feb 2021 · 3 yrs 2 mos</span></div>
+        </li>
+        <li class="artdeco-list__item">
+          <div class="t-bold"><span aria-hidden="true">Associate PM</span></div>
+          <div class="t-normal"><span aria-hidden="true">StartupX</span></div>
+          <div class="t-black--light"><span aria-hidden="true">Jun 2016 - Dec 2017 · 1 yr 7 mos</span></div>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- Education section -->
+  <section id="education">
+    <div>
+      <ul>
+        <li class="artdeco-list__item">
+          <div class="t-bold"><span aria-hidden="true">Stanford University</span></div>
+          <div class="t-normal"><span aria-hidden="true">MBA, Business Administration</span></div>
+          <div class="t-black--light"><span aria-hidden="true">2014 - 2016</span></div>
+        </li>
+        <li class="artdeco-list__item">
+          <div class="t-bold"><span aria-hidden="true">UC Berkeley</span></div>
+          <div class="t-normal"><span aria-hidden="true">BS, Computer Science</span></div>
+          <div class="t-black--light"><span aria-hidden="true">2010 - 2014</span></div>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- Skills section -->
+  <section id="skills">
+    <div>
+      <ul>
+        <li><div class="t-bold"><span aria-hidden="true">Product Management</span></div></li>
+        <li><div class="t-bold"><span aria-hidden="true">Agile Methodologies</span></div></li>
+        <li><div class="t-bold"><span aria-hidden="true">User Research</span></div></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- Connection/follower counts -->
+  <span class="t-bold">312 connections</span>
+  <span class="t-bold">987 followers</span>
+</main>
+</body>
+</html>

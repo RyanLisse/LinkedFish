@@ -237,7 +237,7 @@ swift test --filter LinkedInKitTests
 - Cookie expires ~1 year (refresh when auth fails)
 - LinkedIn may update HTML structure (parsers may need updates)
 - CAPTCHA challenges may block requests (Peekaboo fallback helps)
-- URN resolution uses placeholder format — real URNs require profile scraping
+- URN resolution requires an API call per new username (results are cached in-memory)
 
 ## 📄 License
 

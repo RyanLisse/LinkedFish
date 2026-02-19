@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Acme Corp | LinkedIn</title>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": "Acme Corp",
+  "description": "Acme Corp is a leading technology company building innovative solutions for enterprise customers worldwide.",
+  "url": "https://www.acmecorp.com",
+  "logo": {"@type": "ImageObject", "contentUrl": "https://media.licdn.com/dms/image/acme/logo.jpg"},
+  "address": {"@type": "PostalAddress", "addressLocality": "San Francisco, California"},
+  "foundingDate": "2010",
+  "numberOfEmployees": {"@type": "QuantitativeValue", "value": 5000},
+  "sameAs": "https://www.linkedin.com/company/acme-corp"
+}
+</script>
+</head>
+<body>
+<main>
+  <h1>Acme Corp</h1>
+
+  <!-- Tagline (matches .org-top-card-summary__tagline) -->
+  <div class="org-top-card-summary__tagline">Enterprise Technology Solutions</div>
+
+  <!-- About (matches .break-words .inline-show-more-text) -->
+  <div class="break-words">
+    <div class="inline-show-more-text">Acme Corp is a leading technology company building innovative solutions for enterprise customers worldwide.</div>
+  </div>
+
+  <!-- Employee/Follower info (matches .org-top-card-summary-info-list__info-item) -->
+  <span class="org-top-card-summary-info-list__info-item">
+    <a href="/company/acme-corp/people/?employees=true">5,234 employees</a>
+  </span>
+  <span class="org-top-card-summary-info-list__info-item">42,567 followers</span>
+
+  <!-- Company details (matches .org-page-details__definition-term and nextElementSibling) -->
+  <div>
+    <dt class="org-page-details__definition-term">Industry</dt>
+    <dd>Technology, Information and Internet</dd>
+    <dt class="org-page-details__definition-term">Company size</dt>
+    <dd>1,001-5,000 employees</dd>
+    <dt class="org-page-details__definition-term">Founded</dt>
+    <dd>2010</dd>
+    <dt class="org-page-details__definition-term">Specialties</dt>
+    <dd>Cloud Computing, Enterprise Software, AI/ML, DevOps</dd>
+  </div>
+
+  <!-- Website link (matches a[data-control-name=page_details_module_website_external_link]) -->
+  <a href="https://www.acmecorp.com" data-control-name="page_details_module_website_external_link">acmecorp.com</a>
+</main>
+</body>
+</html>
