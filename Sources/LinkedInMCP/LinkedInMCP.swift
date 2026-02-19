@@ -139,18 +139,23 @@ actor LinkedInToolHandler {
         if let client = self.client {
             return client
         }
-
-        guard let cookie = try credentialStore.loadCookie() else {
+        
+        let cookie = try credentialStore.loadCookie()
+        let hasTinyFish = (try credentialStore.loadTinyFishAPIKey()) != nil
+        
+        guard cookie != nil || hasTinyFish else {
             throw LinkedInMCPError.notAuthenticated(
-                "Not authenticated. Use linkedin_configure to set the li_at cookie."
+                "Not authenticated. Use linkedin_configure to set the li_at cookie or tinyfish_api_key."
             )
         }
 
         let client = LinkedInClient()
-        await client.configure(cookie: cookie)
+        if let cookie {
+            await client.configure(cookie: cookie)
+        }
         self.client = client
 
-        await server.log(.info, "Client initialized with stored cookie", logger: "linkedin")
+        await server.log(.info, "Client initialized with stored credentials", logger: "linkedin")
         return client
     }
     
@@ -173,45 +178,65 @@ actor LinkedInToolHandler {
         do {
             let client = try await getClient()
             let status = try await client.verifyAuth()
+            let hasTinyFish = (try? credentialStore.loadTinyFishAPIKey()) != nil
+            let response = MCPStatusResponse(
+                authenticated: status.valid,
+                message: status.message,
+                tinyfishConfigured: hasTinyFish
+            )
             await server.log(.info, "Auth status: \(status.valid ? "valid" : "invalid")", logger: "linkedin")
-            return CallTool.Result(content: [.text(toJSON(status))])
+            return CallTool.Result(content: [.text(toJSON(response))])
         } catch {
-            let status = AuthStatus(valid: false, message: error.localizedDescription)
-            return CallTool.Result(content: [.text(toJSON(status))])
+            let hasTinyFish = (try? credentialStore.loadTinyFishAPIKey()) != nil
+            let response = MCPStatusResponse(
+                authenticated: false,
+                message: error.localizedDescription,
+                tinyfishConfigured: hasTinyFish
+            )
+            return CallTool.Result(content: [.text(toJSON(response))])
         }
     }
 
     private func handleConfigure(_ args: [String: Value]) async -> CallTool.Result {
-        guard let cookie = args["cookie"]?.stringValue else {
+        let cookie = args["cookie"]?.stringValue
+        let tinyFishAPIKey = args["tinyfish_api_key"]?.stringValue
+        
+        guard cookie != nil || tinyFishAPIKey != nil else {
             return CallTool.Result(
-                content: [.text("Missing required parameter: cookie")],
+                content: [.text("Missing required parameter: cookie or tinyfish_api_key")],
                 isError: true
             )
         }
 
         do {
-            try credentialStore.saveCookie(cookie)
-
-            let client = LinkedInClient()
-            await client.configure(cookie: cookie)
-            self.client = client
+            if let cookie {
+                try credentialStore.saveCookie(cookie)
+            }
+            
+            if let tinyFishAPIKey {
+                try credentialStore.saveTinyFishAPIKey(tinyFishAPIKey)
+            }
+            
+            self.client = nil
+            let client = try await getClient()
 
             let status = try await client.verifyAuth()
+            let hasTinyFish = (try credentialStore.loadTinyFishAPIKey()) != nil
 
             await server.log(.info, "Cookie configured, auth: \(status.valid ? "valid" : "invalid")", logger: "linkedin")
 
             if status.valid {
                 return CallTool.Result(content: [.text(
-                    #"{"success": true, "message": "Cookie saved and verified successfully"}"#
+                    #"{"success": true, "message": "Credentials saved and verified successfully", "tinyfish_configured": \#(hasTinyFish)}"#
                 )])
             } else {
                 return CallTool.Result(content: [.text(
-                    #"{"success": true, "warning": "\#(status.message)", "message": "Cookie saved but verification failed - it may be expired"}"#
+                    #"{"success": true, "warning": "\#(status.message)", "message": "Credentials saved but verification failed", "tinyfish_configured": \#(hasTinyFish)}"#
                 )])
             }
         } catch {
             return CallTool.Result(
-                content: [.text("Failed to save cookie: \(error.localizedDescription)")],
+                content: [.text("Failed to save credentials: \(error.localizedDescription)")],
                 isError: true
             )
         }
@@ -504,6 +529,12 @@ actor LinkedInToolHandler {
     }
 }
 
+private struct MCPStatusResponse: Codable {
+    let authenticated: Bool
+    let message: String
+    let tinyfishConfigured: Bool
+}
+
 // MARK: - Tool Definitions
 
 extension LinkedInToolHandler {
@@ -511,7 +542,7 @@ extension LinkedInToolHandler {
         [
             Tool(
                 name: "linkedin_status",
-                description: "Check LinkedIn authentication status. Returns whether the current session is valid.",
+                description: "Check LinkedIn authentication status. Returns whether the current session is valid and whether TinyFish is configured.",
                 inputSchema: .object([
                     "type": "object",
                     "properties": .object([:])
@@ -527,7 +558,7 @@ extension LinkedInToolHandler {
             Tool(
                 name: "linkedin_configure",
                 description: """
-                    Configure LinkedIn authentication with a li_at cookie.
+                    Configure LinkedIn authentication with a li_at cookie and/or TinyFish API key.
 
                     To get the cookie:
                     1. Open LinkedIn in your browser and log in
@@ -535,7 +566,7 @@ extension LinkedInToolHandler {
                     3. Go to Application → Cookies → linkedin.com
                     4. Find the 'li_at' cookie and copy its value
 
-                    The cookie is stored securely in the macOS Keychain.
+                    Credentials are stored securely in the macOS Keychain.
                     """,
                 inputSchema: .object([
                     "type": "object",
@@ -543,9 +574,12 @@ extension LinkedInToolHandler {
                         "cookie": .object([
                             "type": "string",
                             "description": "The li_at cookie value from LinkedIn"
+                        ]),
+                        "tinyfish_api_key": .object([
+                            "type": "string",
+                            "description": "TinyFish API key for web agent backend"
                         ])
-                    ]),
-                    "required": .array(["cookie"])
+                    ])
                 ]),
                 annotations: .init(
                     title: "Configure Authentication",

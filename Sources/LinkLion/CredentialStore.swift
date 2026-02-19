@@ -5,6 +5,8 @@ import Security
 public struct CredentialStore: Sendable {
     private static let serviceName = "com.linkedinkit.credentials"
     private static let cookieKey = "li_at_cookie"
+    private static let tinyFishServiceName = "com.linklion.tinyfish-api-key"
+    private static let tinyFishKey = "tinyfish_api_key"
     
     public init() {}
     
@@ -85,6 +87,73 @@ public struct CredentialStore: Sendable {
             return try loadCookie() != nil
         } catch {
             return false
+        }
+    }
+    
+    /// Save the TinyFish API key to Keychain
+    public func saveTinyFishAPIKey(_ key: String) throws {
+        try? deleteTinyFishAPIKey()
+        
+        guard let data = key.data(using: .utf8) else {
+            throw CredentialError.invalidData
+        }
+        
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.tinyFishServiceName,
+            kSecAttrAccount as String: Self.tinyFishKey,
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlocked,
+        ]
+        
+        let status = SecItemAdd(query as CFDictionary, nil)
+        
+        guard status == errSecSuccess else {
+            throw CredentialError.keychainError(status)
+        }
+    }
+    
+    /// Load the TinyFish API key from Keychain
+    public func loadTinyFishAPIKey() throws -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.tinyFishServiceName,
+            kSecAttrAccount as String: Self.tinyFishKey,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        
+        if status == errSecItemNotFound {
+            return nil
+        }
+        
+        guard status == errSecSuccess else {
+            throw CredentialError.keychainError(status)
+        }
+        
+        guard let data = result as? Data,
+              let key = String(data: data, encoding: .utf8) else {
+            throw CredentialError.invalidData
+        }
+        
+        return key
+    }
+    
+    /// Delete the TinyFish API key from Keychain
+    public func deleteTinyFishAPIKey() throws {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.tinyFishServiceName,
+            kSecAttrAccount as String: Self.tinyFishKey,
+        ]
+        
+        let status = SecItemDelete(query as CFDictionary)
+        
+        if status != errSecSuccess && status != errSecItemNotFound {
+            throw CredentialError.keychainError(status)
         }
     }
 }

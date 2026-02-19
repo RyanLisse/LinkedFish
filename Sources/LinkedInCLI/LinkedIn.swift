@@ -44,11 +44,17 @@ struct Auth: AsyncParsableCommand {
 
     @Argument(help: "The li_at cookie value from your browser")
     var cookie: String?
+    
+    @Option(name: .long, help: "TinyFish API key for web agent backend")
+    var apiKey: String?
 
     @Flag(name: .shortAndLong, help: "Clear stored authentication")
     var clear: Bool = false
+    
+    @Flag(name: .long, help: "Clear TinyFish API key")
+    var clearApiKey: Bool = false
 
-    @Flag(name: .long, help: "Show stored cookie value")
+    @Flag(name: .long, help: "Show current auth status including TinyFish")
     var show: Bool = false
 
     @Option(name: .long, help: "Extract cookie from browser (safari, chrome, edge, firefox)")
@@ -62,6 +68,18 @@ struct Auth: AsyncParsableCommand {
 
     func run() async throws {
         let store = CredentialStore()
+        
+        if let key = apiKey {
+            try store.saveTinyFishAPIKey(key)
+            print("✓ TinyFish API key saved")
+            return
+        }
+        
+        if clearApiKey {
+            try store.deleteTinyFishAPIKey()
+            print("✓ TinyFish API key cleared")
+            return
+        }
 
         // Handle --clear flag
         if clear {
@@ -77,6 +95,12 @@ struct Auth: AsyncParsableCommand {
                 print(cookie)
             } else {
                 print("No cookie stored")
+            }
+            
+            if (try store.loadTinyFishAPIKey()) != nil {
+                print("TinyFish API key: configured")
+            } else {
+                print("TinyFish API key: not configured")
             }
             return
         }
@@ -270,13 +294,15 @@ struct Status: AsyncParsableCommand {
     func run() async throws {
         let store = CredentialStore()
         let cookie = try options.cookie ?? store.loadCookie()
+        let hasTinyFish = (try store.loadTinyFishAPIKey()) != nil
         
-        guard let cookie = cookie else {
+        guard cookie != nil || hasTinyFish else {
             if options.json {
-                print(#"{"authenticated": false, "message": "No cookie configured"}"#)
+                print(#"{"authenticated": false, "message": "No cookie or TinyFish API key configured", "tinyfish_configured": false}"#)
             } else {
                 print("✗ Not authenticated")
                 print("  Run 'linkedin auth' to configure")
+                print("🐟 TinyFish: Not configured (using Voyager API fallback)")
             }
             return
         }
@@ -287,7 +313,12 @@ struct Status: AsyncParsableCommand {
         if options.json {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(status)
+            let output = StatusOutput(
+                authenticated: status.valid,
+                message: status.message,
+                tinyfishConfigured: hasTinyFish
+            )
+            let data = try encoder.encode(output)
             print(String(data: data, encoding: .utf8)!)
         } else {
             if status.valid {
@@ -295,8 +326,20 @@ struct Status: AsyncParsableCommand {
             } else {
                 print("✗ \(status.message)")
             }
+            
+            if hasTinyFish {
+                print("🐟 TinyFish: Configured (web agent backend active)")
+            } else {
+                print("🐟 TinyFish: Not configured (using Voyager API fallback)")
+            }
         }
     }
+}
+
+struct StatusOutput: Codable {
+    let authenticated: Bool
+    let message: String
+    let tinyfishConfigured: Bool
 }
 
 // MARK: - Profile Command
@@ -914,8 +957,9 @@ struct Messages: AsyncParsableCommand {
 func getAuthenticatedClient(options: GlobalOptions) async throws -> LinkedInClient {
     let store = CredentialStore()
     let cookie = try options.cookie ?? store.loadCookie()
+    let hasTinyFish = (try store.loadTinyFishAPIKey()) != nil
     
-    guard let cookie = cookie else {
+    guard cookie != nil || hasTinyFish else {
         throw ValidationError("Not authenticated. Run 'linkedin auth' to configure.")
     }
     

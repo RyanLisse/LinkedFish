@@ -57,6 +57,9 @@ let package = Package(
                 "LinkLion",
                 "LinkedInCLI",
             ],
+            resources: [
+                .copy("Fixtures"),
+            ],
             swiftSettings: [
                 .swiftLanguageMode(.v6)
             ]

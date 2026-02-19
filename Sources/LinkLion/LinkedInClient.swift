@@ -3,29 +3,80 @@ import Logging
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
+// TinyFishClient types are in the same module (LinkLion)
+
+private protocol LinkedInTinyFishBackend: Sendable {
+    func getProfile(username: String) async throws -> PersonProfile
+    func getCompany(name: String) async throws -> CompanyProfile
+    func searchJobs(query: String, location: String?, limit: Int) async throws -> [JobListing]
+    func getJob(id: String) async throws -> JobDetails
+    func sendInvite(profileUrn: String, message: String?) async throws
+    func sendMessage(profileUrn: String, message: String) async throws
+    func createTextPost(text: String, visibility: PostVisibility) async throws -> PostResult
+    func listConversations(limit: Int) async throws -> [Conversation]
+    func getMessages(conversationId: String, limit: Int) async throws -> [InboxMessage]
+}
+
+private struct TinyFishBackendAdapter: LinkedInTinyFishBackend, Sendable {
+    private let client: TinyFishClient
+    
+    init(apiKey: String, cookie: String?) {
+        let config = TinyFishConfig(apiKey: apiKey, linkedInCookie: cookie)
+        self.client = TinyFishClient(config: config)
+    }
+    
+    func getProfile(username: String) async throws -> PersonProfile {
+        try await client.getLinkedInProfile(username: username)
+    }
+    
+    func getCompany(name: String) async throws -> CompanyProfile {
+        try await client.getLinkedInCompany(name: name)
+    }
+    
+    func searchJobs(query: String, location: String?, limit: Int) async throws -> [JobListing] {
+        try await client.searchLinkedInJobs(query: query, location: location, limit: limit)
+    }
+    
+    func getJob(id: String) async throws -> JobDetails {
+        try await client.getLinkedInJob(id: id)
+    }
+    
+    func sendInvite(profileUrn: String, message: String?) async throws {
+        try await client.sendLinkedInConnectionRequest(username: profileUrn, note: message)
+    }
+    
+    func sendMessage(profileUrn: String, message: String) async throws {
+        try await client.sendLinkedInMessage(username: profileUrn, message: message)
+    }
+    
+    func createTextPost(text: String, visibility: PostVisibility) async throws -> PostResult {
+        try await client.createLinkedInPost(content: text, visibility: visibility.rawValue)
+        return PostResult(success: true, postURN: nil, message: "Post created via TinyFish")
+    }
+    
+    func listConversations(limit: Int) async throws -> [Conversation] {
+        try await client.getLinkedInInbox(limit: limit)
+    }
+    
+    func getMessages(conversationId: String, limit: Int) async throws -> [InboxMessage] {
+        try await client.getLinkedInMessages(conversationId: conversationId, limit: limit)
+    }
+}
 
 /// Main client for interacting with LinkedIn
 public actor LinkedInClient {
     private let session: URLSession
     private var liAtCookie: String?
+    private var tinyFishBackend: LinkedInTinyFishBackend?
     private let logger = Logger(label: "LinkedInKit")
     private let peekaboo: PeekabooClient
     private let gemini: GeminiVision
-    
-    // MARK: - Rate Limiting
-    private var lastRequestTime: ContinuousClock.Instant?
-    private var minimumRequestInterval: Duration = .milliseconds(1500)  // 1.5s between requests
-    private var consecutiveErrors: Int = 0
-    private var backoffUntil: ContinuousClock.Instant?
     
     /// Enable Peekaboo fallback for failed scrapes
     private var _usePeekabooFallback: Bool = true
     
     /// Prefer browser-based messaging over Voyager API for deterministic anti-bot avoidance
     private var _preferPeekabooMessaging: Bool = false
-    
-    /// In-memory cache of username → resolved URN to avoid repeated API calls
-    private var urnCache: [String: String] = [:]
     
     public var usePeekabooFallback: Bool {
         _usePeekabooFallback
@@ -62,6 +113,7 @@ public actor LinkedInClient {
             "Sec-Fetch-User": "?1",
         ]
         self.session = URLSession(configuration: config)
+        self.tinyFishBackend = Self.makeTinyFishBackend(cookie: self.liAtCookie)
     }
     
     /// Configure the client with a li_at cookie
@@ -72,12 +124,13 @@ public actor LinkedInClient {
         } else {
             self.liAtCookie = cookie
         }
+        refreshTinyFishBackend()
         logger.info("LinkedIn client configured with cookie")
     }
     
     /// Check if the client is authenticated
     public var isAuthenticated: Bool {
-        liAtCookie != nil
+        liAtCookie != nil || tinyFishBackend != nil
     }
     
     /// Get the current cookie value
@@ -88,6 +141,9 @@ public actor LinkedInClient {
     /// Verify the current authentication is valid
     public func verifyAuth() async throws -> AuthStatus {
         guard let cookie = liAtCookie else {
+            if tinyFishBackend != nil {
+                return AuthStatus(valid: true, message: "TinyFish backend configured")
+            }
             return AuthStatus(valid: false, message: "No cookie configured")
         }
         
@@ -96,7 +152,7 @@ public actor LinkedInClient {
         var request = URLRequest(url: url)
         request.setValue("li_at=\(cookie)", forHTTPHeaderField: "Cookie")
         
-        let (_, response) = try await performRequest(request)
+        let (_, response) = try await session.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
             return AuthStatus(valid: false, message: "Invalid response")
@@ -120,6 +176,10 @@ public actor LinkedInClient {
     /// Get a person's LinkedIn profile
     /// Uses HTML scraping first, falls back to Peekaboo vision if enabled
     public func getProfile(username: String) async throws -> PersonProfile {
+        if let tinyFishBackend {
+            return try await tinyFishBackend.getProfile(username: username)
+        }
+        
         guard let cookie = liAtCookie else {
             throw LinkedInError.notAuthenticated
         }
@@ -204,6 +264,10 @@ public actor LinkedInClient {
     
     /// Get a company's LinkedIn profile
     public func getCompany(name: String) async throws -> CompanyProfile {
+        if let tinyFishBackend {
+            return try await tinyFishBackend.getCompany(name: name)
+        }
+        
         guard let cookie = liAtCookie else {
             throw LinkedInError.notAuthenticated
         }
@@ -219,6 +283,10 @@ public actor LinkedInClient {
     
     /// Search for jobs
     public func searchJobs(query: String, location: String? = nil, limit: Int = 25) async throws -> [JobListing] {
+        if let tinyFishBackend {
+            return try await tinyFishBackend.searchJobs(query: query, location: location, limit: limit)
+        }
+        
         guard let cookie = liAtCookie else {
             throw LinkedInError.notAuthenticated
         }
@@ -243,6 +311,10 @@ public actor LinkedInClient {
     
     /// Get details for a specific job
     public func getJob(id: String) async throws -> JobDetails {
+        if let tinyFishBackend {
+            return try await tinyFishBackend.getJob(id: id)
+        }
+        
         guard let cookie = liAtCookie else {
             throw LinkedInError.notAuthenticated
         }
@@ -262,6 +334,11 @@ public actor LinkedInClient {
     ///   - profileUrn: The URN of the profile (e.g., "urn:li:fsd_profile:ACoAA...")
     ///   - message: Optional custom message to include with the invitation
     public func sendInvite(profileUrn: String, message: String?) async throws {
+        if let tinyFishBackend {
+            try await tinyFishBackend.sendInvite(profileUrn: profileUrn, message: message)
+            return
+        }
+        
         guard let cookie = liAtCookie else {
             throw LinkedInError.notAuthenticated
         }
@@ -272,12 +349,10 @@ public actor LinkedInClient {
         
         logger.info("Sending invite to: \(profileUrn)")
         
-        let csrfToken = generateCSRFToken()
         let url = Self.buildInviteURL()
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.setValue("li_at=\(cookie); JSESSIONID=\"\(csrfToken)\"", forHTTPHeaderField: "Cookie")
-        request.setValue("ajax:\(csrfToken)", forHTTPHeaderField: "csrf-token")
+        request.setValue("li_at=\(cookie)", forHTTPHeaderField: "Cookie")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/vnd.linkedin.normalized+json+2.1", forHTTPHeaderField: "Accept")
         request.setValue("2.0.0", forHTTPHeaderField: "X-RestLi-Protocol-Version")
@@ -286,7 +361,7 @@ public actor LinkedInClient {
         let payload = InvitePayload(profileUrn: profileUrn, message: message)
         request.httpBody = try JSONEncoder().encode(payload)
         
-        let (_, response) = try await performRequest(request)
+        let (_, response) = try await session.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
             throw LinkedInError.invalidResponse
@@ -308,6 +383,11 @@ public actor LinkedInClient {
     ///   - profileUrn: The URN of the profile (e.g., "urn:li:fsd_profile:ACoAA...")
     ///   - message: The message content to send
     public func sendMessage(profileUrn: String, message: String) async throws {
+        if let tinyFishBackend {
+            try await tinyFishBackend.sendMessage(profileUrn: profileUrn, message: message)
+            return
+        }
+        
         guard let cookie = liAtCookie else {
             throw LinkedInError.notAuthenticated
         }
@@ -318,12 +398,10 @@ public actor LinkedInClient {
         
         logger.info("Sending message to: \(profileUrn)")
         
-        let csrfToken = generateCSRFToken()
         let url = Self.buildMessageURL()
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.setValue("li_at=\(cookie); JSESSIONID=\"\(csrfToken)\"", forHTTPHeaderField: "Cookie")
-        request.setValue("ajax:\(csrfToken)", forHTTPHeaderField: "csrf-token")
+        request.setValue("li_at=\(cookie)", forHTTPHeaderField: "Cookie")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/vnd.linkedin.normalized+json+2.1", forHTTPHeaderField: "Accept")
         request.setValue("2.0.0", forHTTPHeaderField: "X-RestLi-Protocol-Version")
@@ -332,7 +410,7 @@ public actor LinkedInClient {
         let payload = MessagePayload(profileUrn: profileUrn, message: message)
         request.httpBody = try JSONEncoder().encode(payload)
         
-        let (_, response) = try await performRequest(request)
+        let (_, response) = try await session.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
             throw LinkedInError.invalidResponse
@@ -349,84 +427,12 @@ public actor LinkedInClient {
         logger.info("Message sent successfully")
     }
     
-    /// Resolve a username to a real LinkedIn URN via the Voyager API
-    /// Results are cached in-memory to avoid repeated API calls for the same username.
+    /// Resolve a username to a placeholder URN format
     public func resolveURN(from username: String) async throws -> String {
         guard liAtCookie != nil else {
             throw LinkedInError.notAuthenticated
         }
-        
-        // Check cache first
-        if let cached = urnCache[username] {
-            logger.info("Resolved URN from cache for \(username): \(cached)")
-            return cached
-        }
-        
-        logger.info("Resolving URN for username: \(username)")
-        
-        let request = try await voyagerRequest(path: "/identity/profiles/\(username)/profileView")
-        let (data, response) = try await performRequest(request)
-        
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw LinkedInError.invalidResponse
-        }
-        
-        // Handle specific error codes
-        if httpResponse.statusCode == 404 {
-            throw LinkedInError.parseError("Profile not found: \(username)")
-        }
-        if httpResponse.statusCode == 429 {
-            throw LinkedInError.rateLimited
-        }
-        guard (200...299).contains(httpResponse.statusCode) else {
-            throw LinkedInError.httpError(httpResponse.statusCode)
-        }
-        
-        // Parse JSON to find entityUrn
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw LinkedInError.parseError("Invalid JSON response for profile: \(username)")
-        }
-        
-        // Try multiple paths — LinkedIn changes their response format
-        // Path 1: data.profile.miniProfile.entityUrn
-        if let profile = json["profile"] as? [String: Any],
-           let miniProfile = profile["miniProfile"] as? [String: Any],
-           let entityUrn = miniProfile["entityUrn"] as? String,
-           Self.isValidURN(entityUrn) {
-            logger.info("Resolved URN via miniProfile: \(entityUrn)")
-            urnCache[username] = entityUrn
-            return entityUrn
-        }
-        
-        // Path 2: data.profile.entityUrn
-        if let profile = json["profile"] as? [String: Any],
-           let entityUrn = profile["entityUrn"] as? String,
-           Self.isValidURN(entityUrn) {
-            logger.info("Resolved URN via profile: \(entityUrn)")
-            urnCache[username] = entityUrn
-            return entityUrn
-        }
-        
-        // Path 3: Search through included elements
-        if let included = json["included"] as? [[String: Any]] {
-            for element in included {
-                if let entityUrn = element["entityUrn"] as? String,
-                   entityUrn.contains("fsd_profile:") || entityUrn.contains("fs_miniProfile:") {
-                    logger.info("Resolved URN via included: \(entityUrn)")
-                    urnCache[username] = entityUrn
-                    return entityUrn
-                }
-            }
-        }
-        
-        // Path 4: data.entityUrn directly
-        if let entityUrn = json["entityUrn"] as? String, Self.isValidURN(entityUrn) {
-            logger.info("Resolved URN via root: \(entityUrn)")
-            urnCache[username] = entityUrn
-            return entityUrn
-        }
-        
-        throw LinkedInError.parseError("Could not resolve URN for username: \(username). Profile may not exist or response format changed.")
+        return Self.buildPlaceholderURN(from: username)
     }
     
     // MARK: - Static Helpers
@@ -439,9 +445,6 @@ public actor LinkedInClient {
         URL(string: "\(apiURL)/messaging/conversations")!
     }
     
-    /// Build a placeholder URN from a username string.
-    /// ⚠️ For testing only — these are NOT real LinkedIn URNs and will be rejected by the API.
-    /// Use `resolveURN(from:)` to get a real URN via the Voyager API.
     public static func buildPlaceholderURN(from username: String) -> String {
         "urn:li:fsd_profile:\(username)"
     }
@@ -486,7 +489,7 @@ public actor LinkedInClient {
     /// Get the authenticated user's profile URN (needed for posting)
     public func getMyProfileURN() async throws -> String {
         let request = try await voyagerRequest(path: "/identity/profiles/me")
-        let (data, response) = try await performRequest(request)
+        let (data, response) = try await session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200 else {
@@ -515,6 +518,10 @@ public actor LinkedInClient {
 
     /// Create a text-only LinkedIn post
     public func createTextPost(text: String, visibility: PostVisibility = .public) async throws -> PostResult {
+        if let tinyFishBackend {
+            return try await tinyFishBackend.createTextPost(text: text, visibility: visibility)
+        }
+        
         let connectionsOnly = visibility == .connections
 
         let payload: [String: Any] = [
@@ -536,7 +543,7 @@ public actor LinkedInClient {
             body: body
         )
 
-        let (data, response) = try await performRequest(request)
+        let (data, response) = try await session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw LinkedInError.invalidResponse
@@ -610,7 +617,7 @@ public actor LinkedInClient {
             body: body
         )
 
-        let (data, response) = try await performRequest(request)
+        let (data, response) = try await session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw LinkedInError.invalidResponse
@@ -654,7 +661,7 @@ public actor LinkedInClient {
             body: registerBody
         )
 
-        let (registerData, registerResponse) = try await performRequest(registerRequest)
+        let (registerData, registerResponse) = try await session.data(for: registerRequest)
 
         guard let registerHttp = registerResponse as? HTTPURLResponse,
               registerHttp.statusCode == 200 || registerHttp.statusCode == 201 else {
@@ -711,7 +718,7 @@ public actor LinkedInClient {
         uploadRequest.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
         uploadRequest.httpBody = imageData
 
-        let (_, uploadResponse) = try await performRequest(uploadRequest)
+        let (_, uploadResponse) = try await session.data(for: uploadRequest)
 
         guard let uploadHttp = uploadResponse as? HTTPURLResponse,
               (200...299).contains(uploadHttp.statusCode) else {
@@ -763,7 +770,7 @@ public actor LinkedInClient {
             body: body
         )
 
-        let (data, response) = try await performRequest(request)
+        let (data, response) = try await session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw LinkedInError.invalidResponse
@@ -794,6 +801,10 @@ public actor LinkedInClient {
 
     /// List recent conversations from LinkedIn inbox
     public func listConversations(limit: Int = 20) async throws -> [Conversation] {
+        if let tinyFishBackend {
+            return try await tinyFishBackend.listConversations(limit: limit)
+        }
+        
         if _preferPeekabooMessaging {
             logger.info("Messaging browser mode enabled. Using Peekaboo for conversation list.")
             return try await listConversationsWithPeekaboo(limit: limit)
@@ -809,7 +820,7 @@ public actor LinkedInClient {
                 path: "/messaging/conversations?keyVersion=LEGACY_INBOX&count=\(limit)"
             )
 
-            let (data, response) = try await performRequest(request)
+            let (data, response) = try await session.data(for: request)
 
             guard let httpResponse = response as? HTTPURLResponse,
                   httpResponse.statusCode == 200 else {
@@ -918,6 +929,10 @@ public actor LinkedInClient {
 
     /// Get messages from a specific conversation
     public func getMessages(conversationId: String, limit: Int = 20) async throws -> [InboxMessage] {
+        if let tinyFishBackend {
+            return try await tinyFishBackend.getMessages(conversationId: conversationId, limit: limit)
+        }
+        
         if _preferPeekabooMessaging {
             logger.info("Messaging browser mode enabled. Using Peekaboo for conversation messages.")
             return try await getMessagesWithPeekaboo(conversationId: conversationId, limit: limit)
@@ -933,7 +948,7 @@ public actor LinkedInClient {
                 path: "/messaging/conversations/\(conversationId)/events?keyVersion=LEGACY_INBOX&count=\(limit)"
             )
 
-            let (data, response) = try await performRequest(request)
+            let (data, response) = try await session.data(for: request)
 
             guard let httpResponse = response as? HTTPURLResponse,
                   httpResponse.statusCode == 200 else {
@@ -1019,6 +1034,19 @@ public actor LinkedInClient {
     }
 
     // MARK: - Private Helpers
+    
+    private static func makeTinyFishBackend(cookie: String?) -> LinkedInTinyFishBackend? {
+        guard let apiKey = try? CredentialStore().loadTinyFishAPIKey(),
+              !apiKey.isEmpty else {
+            return nil
+        }
+        
+        return TinyFishBackendAdapter(apiKey: apiKey, cookie: cookie)
+    }
+    
+    private func refreshTinyFishBackend() {
+        tinyFishBackend = Self.makeTinyFishBackend(cookie: liAtCookie)
+    }
 
     private func listConversationsWithPeekaboo(limit: Int) async throws -> [Conversation] {
         try await peekaboo.navigate(to: "\(Self.baseURL)/messaging/")
@@ -1134,64 +1162,6 @@ public actor LinkedInClient {
         return (sender, message)
     }
 
-    // MARK: - Rate Limiting
-
-    /// Wait for any active backoff period and enforce minimum request interval with jitter
-    private func throttle() async throws {
-        // Check backoff
-        if let backoff = backoffUntil {
-            let now = ContinuousClock.now
-            if now < backoff {
-                let remaining = backoff - now
-                logger.warning("Rate limited. Backing off for \(remaining)")
-                try await Task.sleep(for: remaining)
-            }
-            backoffUntil = nil
-        }
-
-        // Enforce minimum interval with jitter
-        if let lastTime = lastRequestTime {
-            let elapsed = ContinuousClock.now - lastTime
-            let jitter = Duration.milliseconds(Int.random(in: 0...500))
-            let required = minimumRequestInterval + jitter
-            if elapsed < required {
-                try await Task.sleep(for: required - elapsed)
-            }
-        }
-
-        lastRequestTime = .now
-    }
-
-    /// Track rate limit responses and apply exponential backoff
-    private func handleResponseStatus(_ statusCode: Int) {
-        if statusCode == 429 {
-            consecutiveErrors += 1
-            let backoffSeconds = min(pow(2.0, Double(consecutiveErrors)) * 5, 300)  // 10s, 20s, 40s... max 5min
-            backoffUntil = .now + .seconds(Int(backoffSeconds))
-            logger.warning("Rate limited (429). Backoff: \(Int(backoffSeconds))s. Consecutive: \(consecutiveErrors)")
-        } else if (200...299).contains(statusCode) {
-            consecutiveErrors = 0
-        }
-    }
-
-    /// Throttled wrapper around session.data(for:) — enforces rate limits and tracks 429s
-    private func performRequest(_ request: URLRequest) async throws -> (Data, URLResponse) {
-        try await throttle()
-        let (data, response) = try await session.data(for: request)
-        if let httpResponse = response as? HTTPURLResponse {
-            handleResponseStatus(httpResponse.statusCode)
-        }
-        return (data, response)
-    }
-
-    /// Check current rate limit status (for CLI/MCP reporting)
-    public var rateLimitStatus: (isLimited: Bool, retryAfter: Duration?) {
-        guard let backoff = backoffUntil else { return (false, nil) }
-        let now = ContinuousClock.now
-        if now >= backoff { return (false, nil) }
-        return (true, backoff - now)
-    }
-
     private func fetchPage(url: String, cookie: String) async throws -> String {
         guard let url = URL(string: url) else {
             throw LinkedInError.invalidURL(url)
@@ -1201,7 +1171,7 @@ public actor LinkedInClient {
         request.setValue("li_at=\(cookie)", forHTTPHeaderField: "Cookie")
         request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
 
-        let (data, response) = try await performRequest(request)
+        let (data, response) = try await session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw LinkedInError.invalidResponse
