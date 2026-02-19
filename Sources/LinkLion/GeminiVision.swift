@@ -214,9 +214,16 @@ extension GeminiVision {
         process.standardError = pipe
         
         try process.run()
-        process.waitUntilExit()
         
-        if process.terminationStatus == 0 {
+        // Await process exit off the cooperative thread pool to avoid blocking
+        let terminationStatus: Int32 = try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global().async {
+                process.waitUntilExit()
+                continuation.resume(returning: process.terminationStatus)
+            }
+        }
+        
+        if terminationStatus == 0 {
             return outputPath
         } else {
             // If resize fails, return original

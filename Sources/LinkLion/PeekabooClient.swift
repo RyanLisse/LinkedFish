@@ -45,7 +45,7 @@ public actor PeekabooClient {
     
     /// Capture with element detection (returns snapshot ID for clicking)
     public func see(app: String? = nil) async throws -> VisionResult {
-        var args = ["see", "--app", app ?? browser, "--json-output"]
+        let args = ["see", "--app", app ?? browser, "--json-output"]
         
         let result = try await runPeekaboo(args)
         
@@ -193,7 +193,14 @@ public actor PeekabooClient {
         logger.debug("Running: peekaboo \(args.joined(separator: " "))")
         
         try process.run()
-        process.waitUntilExit()
+        
+        // Await process exit off the cooperative thread pool to avoid blocking
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            DispatchQueue.global().async {
+                process.waitUntilExit()
+                continuation.resume()
+            }
+        }
         
         let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
         let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()

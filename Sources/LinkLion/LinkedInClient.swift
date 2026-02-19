@@ -359,7 +359,7 @@ public actor LinkedInClient {
     }
     
     public static func isValidURN(_ urn: String) -> Bool {
-        urn.hasPrefix("urn:li:") && urn.contains("_profile:") || urn.contains("_miniProfile:")
+        urn.hasPrefix("urn:li:") && (urn.contains("_profile:") || urn.contains("_miniProfile:"))
     }
     
     
