@@ -15,6 +15,8 @@ struct LinkedIn: AsyncParsableCommand {
             Jobs.self,
             Job.self,
             Post.self,
+            Connect.self,
+            Send.self,
             Inbox.self,
             Messages.self,
             Status.self,
@@ -681,6 +683,145 @@ struct Post: AsyncParsableCommand {
             print("✗ \(result.message)")
         }
     }
+}
+
+// MARK: - Connect Command
+
+struct Connect: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        abstract: "Send a connection request to a LinkedIn user"
+    )
+
+    @Argument(help: "LinkedIn username or profile URL")
+    var user: String
+
+    @Option(name: .shortAndLong, help: "Custom message to include with the invitation")
+    var message: String?
+
+    @Flag(name: .long, help: "Dry run — show what would happen without sending")
+    var dryRun: Bool = false
+
+    @Flag(name: .long, help: "Skip confirmation prompt")
+    var force: Bool = false
+
+    @OptionGroup var options: GlobalOptions
+
+    func run() async throws {
+        guard let username = extractUsername(from: user) else {
+            throw ValidationError("Invalid username or URL: \(user)")
+        }
+
+        if dryRun {
+            print("🔍 Dry run — would send connection request:")
+            print("   To: \(username)")
+            if let message = message {
+                print("   Message: \(message)")
+            } else {
+                print("   Message: (none)")
+            }
+            return
+        }
+
+        if !force {
+            print("Send connection request to \(username)? (y/n) ", terminator: "")
+            guard let answer = readLine()?.lowercased(), answer == "y" || answer == "yes" else {
+                print("Cancelled.")
+                return
+            }
+        }
+
+        let client = try await getAuthenticatedClient(options: options)
+        let urn = try await client.resolveURN(from: username)
+        try await client.sendInvite(profileUrn: urn, message: message)
+
+        if options.json {
+            let result = ConnectResult(success: true, username: username, message: message, urn: urn)
+            printJSON(result)
+        } else {
+            print("✓ Connection request sent to \(username)")
+            if let message = message {
+                print("  Message: \(message)")
+            }
+        }
+    }
+}
+
+/// Result type for JSON output of connect command
+struct ConnectResult: Codable {
+    let success: Bool
+    let username: String
+    let message: String?
+    let urn: String
+}
+
+// MARK: - Send Command
+
+struct Send: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        abstract: "Send a message to a LinkedIn user"
+    )
+
+    @Argument(help: "LinkedIn username or profile URL")
+    var user: String
+
+    @Argument(help: "Message text to send")
+    var text: String?
+
+    @Option(name: .shortAndLong, help: "Message text (alternative to positional argument)")
+    var message: String?
+
+    @Flag(name: .long, help: "Dry run — show what would happen without sending")
+    var dryRun: Bool = false
+
+    @Flag(name: .long, help: "Skip confirmation prompt")
+    var force: Bool = false
+
+    @OptionGroup var options: GlobalOptions
+
+    func run() async throws {
+        guard let username = extractUsername(from: user) else {
+            throw ValidationError("Invalid username or URL: \(user)")
+        }
+
+        // Resolve message from positional arg or --message flag
+        guard let messageText = text ?? message else {
+            throw ValidationError("Message text is required. Provide it as a second argument or with --message.")
+        }
+
+        if dryRun {
+            print("🔍 Dry run — would send message:")
+            print("   To: \(username)")
+            print("   Message: \(messageText)")
+            return
+        }
+
+        if !force {
+            print("Send message to \(username)? (y/n) ", terminator: "")
+            guard let answer = readLine()?.lowercased(), answer == "y" || answer == "yes" else {
+                print("Cancelled.")
+                return
+            }
+        }
+
+        let client = try await getAuthenticatedClient(options: options)
+        let urn = try await client.resolveURN(from: username)
+        try await client.sendMessage(profileUrn: urn, message: messageText)
+
+        if options.json {
+            let result = SendResult(success: true, username: username, message: messageText, urn: urn)
+            printJSON(result)
+        } else {
+            print("✓ Message sent to \(username)")
+        }
+    }
+}
+
+/// Result type for JSON output of send command
+struct SendResult: Codable {
+    let success: Bool
+    let username: String
+    let message: String
+    let urn: String
 }
 
 // MARK: - Inbox Command
