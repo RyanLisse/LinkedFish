@@ -29,7 +29,7 @@ struct LinkedInMCPMain {
         }
 
         logger.info("Starting LinkedIn MCP Server v\(LinkLion.version)")
-        logger.info("Tools: linkedin_status, linkedin_configure, linkedin_get_profile, linkedin_get_company, linkedin_search_jobs, linkedin_get_job")
+        logger.info("Tools: linkedin_status, linkedin_configure, linkedin_get_profile, linkedin_get_company, linkedin_search_jobs, linkedin_get_job, linkedin_send_invite, linkedin_send_message")
 
         let transport = StdioTransport(logger: logger)
         try await server.start(transport: transport)
@@ -121,6 +121,10 @@ actor LinkedInToolHandler {
             return await handleListConversations(args)
         case "linkedin_get_messages":
             return await handleGetMessages(args)
+        case "linkedin_send_invite":
+            return await handleSendInvite(args)
+        case "linkedin_send_message":
+            return await handleSendMessage(args)
         default:
             return CallTool.Result(
                 content: [.text("Unknown tool: \(toolName)")],
@@ -407,6 +411,85 @@ actor LinkedInToolHandler {
         }
     }
 
+    private func handleSendInvite(_ args: [String: Value]) async -> CallTool.Result {
+        guard let usernameOrURL = args["username"]?.stringValue else {
+            return CallTool.Result(
+                content: [.text("Missing required parameter: username")],
+                isError: true
+            )
+        }
+
+        guard let username = extractUsername(from: usernameOrURL) else {
+            return CallTool.Result(
+                content: [.text("Invalid username or URL: \(usernameOrURL)")],
+                isError: true
+            )
+        }
+
+        let message = args["message"]?.stringValue
+
+        do {
+            let client = try await getClient()
+            await server.log(.info, "Sending invite to: \(username)", logger: "linkedin")
+
+            let urn = try await client.resolveURN(from: username)
+            try await client.sendInvite(profileUrn: urn, message: message)
+
+            await server.log(.notice, "Invite sent to: \(username)", logger: "linkedin")
+            return CallTool.Result(content: [.text(
+                #"{"success": true, "message": "Connection invitation sent to \#(username)"}"#
+            )])
+        } catch {
+            await server.log(.error, "Failed to send invite: \(error.localizedDescription)", logger: "linkedin")
+            return CallTool.Result(
+                content: [.text("Failed to send invite: \(error.localizedDescription)")],
+                isError: true
+            )
+        }
+    }
+
+    private func handleSendMessage(_ args: [String: Value]) async -> CallTool.Result {
+        guard let usernameOrURL = args["username"]?.stringValue else {
+            return CallTool.Result(
+                content: [.text("Missing required parameter: username")],
+                isError: true
+            )
+        }
+
+        guard let username = extractUsername(from: usernameOrURL) else {
+            return CallTool.Result(
+                content: [.text("Invalid username or URL: \(usernameOrURL)")],
+                isError: true
+            )
+        }
+
+        guard let message = args["message"]?.stringValue else {
+            return CallTool.Result(
+                content: [.text("Missing required parameter: message")],
+                isError: true
+            )
+        }
+
+        do {
+            let client = try await getClient()
+            await server.log(.info, "Sending message to: \(username)", logger: "linkedin")
+
+            let urn = try await client.resolveURN(from: username)
+            try await client.sendMessage(profileUrn: urn, message: message)
+
+            await server.log(.notice, "Message sent to: \(username)", logger: "linkedin")
+            return CallTool.Result(content: [.text(
+                #"{"success": true, "message": "Message sent to \#(username)"}"#
+            )])
+        } catch {
+            await server.log(.error, "Failed to send message: \(error.localizedDescription)", logger: "linkedin")
+            return CallTool.Result(
+                content: [.text("Failed to send message: \(error.localizedDescription)")],
+                isError: true
+            )
+        }
+    }
+
     // MARK: - Helpers
 
     private func toJSON<T: Codable>(_ value: T) -> String {
@@ -656,6 +739,44 @@ extension LinkedInToolHandler {
                     "required": .array(["conversation_id"])
                 ]),
                 annotations: .init(title: "Get Messages", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true)
+            ),
+            Tool(
+                name: "linkedin_send_invite",
+                description: "Send a connection invitation to a LinkedIn user.",
+                inputSchema: .object([
+                    "type": "object",
+                    "properties": .object([
+                        "username": .object([
+                            "type": "string",
+                            "description": "LinkedIn username (e.g., 'johndoe') or full profile URL (https://linkedin.com/in/johndoe)"
+                        ]),
+                        "message": .object([
+                            "type": "string",
+                            "description": "Optional custom invitation note"
+                        ])
+                    ]),
+                    "required": .array(["username"])
+                ]),
+                annotations: .init(title: "Send Invite", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true)
+            ),
+            Tool(
+                name: "linkedin_send_message",
+                description: "Send a direct message to a LinkedIn user.",
+                inputSchema: .object([
+                    "type": "object",
+                    "properties": .object([
+                        "username": .object([
+                            "type": "string",
+                            "description": "LinkedIn username (e.g., 'johndoe') or full profile URL (https://linkedin.com/in/johndoe)"
+                        ]),
+                        "message": .object([
+                            "type": "string",
+                            "description": "Message text to send"
+                        ])
+                    ]),
+                    "required": .array(["username", "message"])
+                ]),
+                annotations: .init(title: "Send Message", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true)
             ),
         ]
     }
