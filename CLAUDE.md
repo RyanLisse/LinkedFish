@@ -4,10 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-LinkLion is a LinkedIn scraping system written in Swift 6 with three components:
-1. **LinkLion** (library) - Core LinkedIn API client with HTML parsing, authentication, and data models
-2. **LinkedInCLI** (`linkedin` command) - Command-line interface for profile/company/job scraping
-3. **LinkedInMCP** (`linkedin-mcp` server) - MCP server for Claude Desktop integration
+LinkedFish (package: LinkedInKit) is a LinkedIn scraping system written in Swift 6 with three components:
+1. **LinkLion** (library) — Core LinkedIn API client with HTML parsing, browser fallback, vision analysis, authentication, and data models
+2. **LinkedInCLI** (`linkedin` binary) — Command-line interface for profile/company/job scraping, posting, messaging, and networking
+3. **LinkedInMCP** (`linkedin-mcp` binary) — MCP server with 12 tools for Claude Desktop integration
 
 ## Build & Development Commands
 
@@ -38,18 +38,35 @@ swift test --verbose
 
 ### CLI Usage
 ```bash
-# Authenticate
+# Authenticate (browser extraction or manual)
+linkedin auth --browser safari
 linkedin auth YOUR_LI_AT_COOKIE
 
-# Get profile
-linkedin profile johndoe
-linkedin profile "https://linkedin.com/in/johndoe" --json
+# Profile & Company
+linkedin profile johndoe --json
+linkedin company microsoft --json
 
-# Search jobs
+# Jobs
 linkedin jobs "Swift Developer" --location "Remote" --limit 10
+linkedin job 1234567890 --json
 
-# Check auth status
-linkedin status
+# Post creation
+linkedin post "Hello LinkedIn!" --visibility public
+linkedin post "Check this" --url "https://example.com"
+linkedin post "Photo post" --image ./photo.jpg
+linkedin post "Test" --dry-run
+
+# Messaging & Inbox
+linkedin inbox --limit 10
+linkedin inbox --unread-only
+linkedin messages CONVERSATION_ID --limit 20
+
+# Connections
+linkedin connect johndoe --message "Let's connect!"
+linkedin send johndoe "Thanks for the article!"
+
+# Status
+linkedin status --json
 ```
 
 ## Architecture
@@ -57,82 +74,110 @@ linkedin status
 ### Three-Layer Design
 
 ```
-┌─────────────────────────────────────────────────┐
-│  User Interfaces                                │
-│  • LinkedInCLI (ArgumentParser commands)        │
-│  • LinkedInMCP (MCP server handlers)            │
-└────────────────┬────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│  User Interfaces                                 │
+│  • LinkedInCLI (ArgumentParser commands)         │
+│  • LinkedInMCP (MCP server handlers)             │
+└────────────────┬─────────────────────────────────┘
                  │
-┌────────────────▼────────────────────────────────┐
-│  LinkLion Core Library                          │
-│  • LinkedInClient (actor) - Main API client     │
-│  • PeekabooClient - Browser automation fallback │
-│  • GeminiVision - Vision-based parsing          │
-│  • ProfileParser/JobParser - HTML parsing       │
-│  • CredentialStore - Keychain authentication    │
-└────────────────┬────────────────────────────────┘
+┌────────────────▼─────────────────────────────────┐
+│  LinkLion Core Library                           │
+│  • LinkedInClient (actor) — Main API client      │
+│  • PeekabooClient — Browser automation fallback  │
+│  • GeminiVision — Vision-based parsing           │
+│  • ProfileParser / JobParser — HTML parsing      │
+│  • CredentialStore — Keychain authentication     │
+│  • BrowserCookieExtractor — Cookie extraction    │
+└────────────────┬─────────────────────────────────┘
                  │
-┌────────────────▼────────────────────────────────┐
-│  External Services                              │
-│  • LinkedIn.com (Voyager API + HTML scraping)   │
-│  • macOS Keychain (credential storage)          │
-│  • Agent Browser (Peekaboo automation)          │
-│  • Gemini Vision API (vision parsing)           │
-└─────────────────────────────────────────────────┘
+┌────────────────▼─────────────────────────────────┐
+│  External Services                               │
+│  • LinkedIn.com (Voyager API + HTML scraping)    │
+│  • macOS Keychain (credential storage)           │
+│  • Peekaboo (browser automation)                 │
+│  • Gemini Vision API (vision parsing)            │
+└──────────────────────────────────────────────────┘
 ```
 
 ### LinkedInClient (Core)
 
 The `LinkedInClient` is an **actor** (thread-safe) that manages:
-- **Authentication**: Cookie-based auth via `li_at` cookie stored in Keychain
-- **API Modes**:
-  - Primary: Direct LinkedIn Voyager API calls with HTML parsing
-  - Fallback: PeekabooClient for browser automation when anti-bot detection triggers
-- **Rate Limiting**: Built-in delays and user-agent rotation
-- **Data Models**: `PersonProfile`, `CompanyProfile`, `JobListing`, `Experience`, `Education`
 
-Key methods:
-- `configure(cookie:)` - Set authentication cookie
-- `getProfile(username:)` - Scrape person profile
-- `getCompany(name:)` - Scrape company profile
-- `searchJobs(query:location:)` - Search job listings
-- `sendInvite(profileUrn:message:)` - Send connection request
-- `sendMessage(profileUrn:message:)` - Send direct message
+**Authentication:**
+- Cookie-based auth via `li_at` cookie stored in Keychain
+- `configure(cookie:)` — set auth cookie
+- `verifyAuth()` → `AuthStatus` (`.valid: Bool`, `.message: String`)
+- `isAuthenticated: Bool`, `cookie: String?`
 
-### Integration Layers
+**Profile & Company Scraping:**
+- `getProfile(username:)` → `PersonProfile`
+- `getProfileWithVision(username:)` → `PersonProfile` (Peekaboo + Gemini fallback)
+- `getCompany(name:)` → `CompanyProfile`
 
-**PeekabooClient** (`PeekabooClient.swift`)
-- Browser automation via `agent-browser` CLI (Chrome/Safari/Firefox)
-- Activated when `usePeekabooFallback = true` (default)
-- Handles CAPTCHA avoidance and session state
+**Job Search:**
+- `searchJobs(query:location:limit:)` → `[JobListing]`
+- `getJob(id:)` → `JobDetails`
 
-**GeminiVision** (`GeminiVision.swift`)
-- Vision API integration for parsing LinkedIn screenshots
-- Extracts UI elements when HTML parsing fails
-- Used for message/conversation list parsing
+**Post Creation:**
+- `createTextPost(text:visibility:)` → `PostResult`
+- `createArticlePost(text:url:title:description:visibility:)` → `PostResult`
+- `createImagePost(text:imageData:filename:visibility:)` → `PostResult`
+- `uploadImage(data:filename:)` → `MediaUploadResult`
+- `getMyProfileURN()` → `String`
 
-**CredentialStore** (`CredentialStore.swift`)
-- macOS Keychain integration for secure cookie storage
-- Handles `li_at=` prefix normalization
-- Service: "LinkLion", Account: "li_at"
+**Messaging & Inbox:**
+- `listConversations(limit:)` → `[Conversation]`
+- `getMessages(conversationId:limit:)` → `[InboxMessage]`
 
-### MCP Server Architecture
+**Connections:**
+- `sendInvite(profileUrn:message:)` — send connection request
+- `sendMessage(profileUrn:message:)` — send DM
+- `resolveURN(from:)` → `String` — resolve username to URN
 
-The MCP server (`LinkedInMCP.swift`) exposes six tools:
-1. `linkedin_status` - Check authentication status
-2. `linkedin_configure` - Set authentication cookie
-3. `linkedin_get_profile` - Get person profile by username
-4. `linkedin_get_company` - Get company profile by name
-5. `linkedin_search_jobs` - Search jobs by query/location
-6. `linkedin_get_job` - Get job details by ID
+**Fallback Control:**
+- `usePeekabooFallback: Bool` / `setUsePeekabooFallback(_:)`
+- `preferPeekabooMessaging: Bool` / `setPreferPeekabooMessaging(_:)`
 
-**Handler Pattern**: `LinkedInToolHandler` manages tool routing with `listTools()` and `callTool()` methods.
+### CLI Commands (11 subcommands)
+
+| Command | Description |
+|---------|-------------|
+| `auth` | Configure/extract li_at cookie |
+| `status` | Check authentication status |
+| `profile` | Get person profile |
+| `company` | Get company profile |
+| `jobs` | Search for jobs |
+| `job` | Get job details |
+| `post` | Create a post (text/article/image) |
+| `connect` | Send connection invitation |
+| `send` | Send direct message |
+| `inbox` | List inbox conversations |
+| `messages` | Read conversation messages |
+
+### MCP Server (12 tools)
+
+| Tool | Description |
+|------|-------------|
+| `linkedin_status` | Check auth status |
+| `linkedin_configure` | Set li_at cookie |
+| `linkedin_get_profile` | Get person profile by `username` |
+| `linkedin_get_company` | Get company profile by `company` |
+| `linkedin_search_jobs` | Search jobs by `query`, `location`, `limit` |
+| `linkedin_get_job` | Get job details by `job_id` |
+| `linkedin_create_post` | Create post: `text`, `visibility`, `url`, `image_path` |
+| `linkedin_upload_image` | Upload image by `image_path` |
+| `linkedin_list_conversations` | List conversations: `limit`, `browser_mode` |
+| `linkedin_get_messages` | Get messages: `conversation_id`, `limit`, `browser_mode` |
+| `linkedin_send_invite` | Send invite: `username`, `message` |
+| `linkedin_send_message` | Send message: `username`, `message` |
+
+**Handler Pattern:** `LinkedInToolHandler` (actor) manages tool routing with `listTools()` and `callTool()` methods.
 
 ## Test-Driven Development
 
-LinkLion follows TDD with comprehensive test coverage in `Tests/LinkedInKitTests/`:
+Test suite in `Tests/LinkedInKitTests/`:
 
-**Test Categories**:
+**Test Categories:**
 - **URL Extraction**: `testExtractUsername`, `testExtractCompanyName`, `testExtractJobId`
 - **Authentication**: `testCredentialStore`, `testClientRequiresAuth*`
 - **Payload Construction**: `testSendInvitePayloadConstruction`, `testSendMessagePayloadConstruction`
@@ -140,55 +185,73 @@ LinkLion follows TDD with comprehensive test coverage in `Tests/LinkedInKitTests
 - **Data Models**: `testPersonProfileEncoding`, `testJobListingEncoding`
 - **Vision Parsing**: `testParseConversationsFromVisionElements`, `testParseMessagesFromVision`
 
-**Running specific test suites**:
 ```bash
-# Test authentication flow
+# Run specific test suites
 swift test --filter testClientRequiresAuth
-
-# Test payload construction
 swift test --filter PayloadConstruction
-
-# Test vision parsing
 swift test --filter Vision
 ```
 
 ## Key Files
 
-- `Sources/LinkLion/LinkedInClient.swift` - Main API client (47KB, actor-based)
-- `Sources/LinkLion/Models.swift` - Data models (PersonProfile, JobListing, etc.)
-- `Sources/LinkLion/ProfileParser.swift` - HTML parsing for profiles (18KB)
-- `Sources/LinkLion/JobParser.swift` - HTML parsing for jobs (14KB)
-- `Sources/LinkLion/PeekabooClient.swift` - Browser automation client (9KB)
-- `Sources/LinkLion/GeminiVision.swift` - Vision API integration (9KB)
-- `Sources/LinkLion/CredentialStore.swift` - Keychain storage (3KB)
-- `Sources/LinkedInCLI/LinkedIn.swift` - CLI command definitions
-- `Sources/LinkedInMCP/LinkedInMCP.swift` - MCP server implementation
-- `Tests/LinkedInKitTests/LinkedInKitTests.swift` - Comprehensive test suite (419 lines)
+| File | Description |
+|------|-------------|
+| `Sources/LinkLion/LinkedInClient.swift` | Main API client (actor-based) |
+| `Sources/LinkLion/Models.swift` | All data models |
+| `Sources/LinkLion/ProfileParser.swift` | HTML parsing for profiles |
+| `Sources/LinkLion/JobParser.swift` | HTML parsing for jobs |
+| `Sources/LinkLion/PeekabooClient.swift` | Browser automation client |
+| `Sources/LinkLion/GeminiVision.swift` | Vision API integration |
+| `Sources/LinkLion/CredentialStore.swift` | Keychain storage |
+| `Sources/LinkLion/LinkedInKit.swift` | Version, factory, URL helpers |
+| `Sources/LinkedInCLI/LinkedIn.swift` | CLI command definitions |
+| `Sources/LinkedInCLI/BrowserCookieExtractor.swift` | Browser cookie extraction |
+| `Sources/LinkedInMCP/LinkedInMCP.swift` | MCP server (12 tools) |
+| `Tests/LinkedInKitTests/LinkedInKitTests.swift` | Test suite |
 
 ## Dependencies
 
-- **swift-argument-parser** (1.5.0+) - CLI interface
-- **modelcontextprotocol/swift-sdk** (0.9.0+) - MCP server
-- **swift-log** (1.6.0+) - Logging infrastructure
-- **SwiftSoup** (2.7.0+) - HTML parsing
+| Package | Version | Used By | Purpose |
+|---------|---------|---------|---------|
+| swift-argument-parser | 1.5.0+ | LinkedInCLI | CLI framework |
+| modelcontextprotocol/swift-sdk | 0.9.0+ | LinkedInMCP | MCP server |
+| swift-log | 1.6.0+ | LinkLion, LinkedInMCP | Logging |
+| SwiftSoup | 2.7.0+ | LinkLion | HTML parsing |
+| SweetCookieKit | 0.3.0+ | LinkedInCLI | Browser cookie extraction |
+
+## Data Models
+
+All models are `Codable`, `Sendable`:
+
+- `AuthStatus` — `valid: Bool`, `message: String`
+- `PersonProfile` — username, name, headline, about, location, company, jobTitle, experiences, educations, skills, connectionCount, followerCount, openToWork, etc.
+- `CompanyProfile` — name, slug, tagline, about, website, industry, companySize, headquarters, founded, specialties, employeeCount, followerCount, etc.
+- `JobListing` — id, title, company, location, postedDate, salary, isEasyApply, jobURL
+- `JobDetails` — extends JobListing with workplaceType, employmentType, experienceLevel, applicantCount, description, skills
+- `PostVisibility` — `.public`, `.connections`
+- `PostResult` — success, postURN, message
+- `MediaUploadResult` — mediaURN, uploadURL
+- `Conversation` — id, participantNames, lastMessage, lastMessageAt, unread
+- `InboxMessage` — id, senderName, text, timestamp
 
 ## Authentication Flow
 
-1. User provides `li_at` cookie via `linkedin auth` command
-2. CredentialStore saves to macOS Keychain (service: "LinkLion", account: "li_at")
-3. LinkedInClient reads from Keychain on initialization
-4. Cookie attached to all HTTP requests as `Cookie: li_at=...`
-5. Cookie expires after ~1 year, requiring re-authentication
+1. User provides `li_at` cookie via `linkedin auth` command (manual or browser extraction)
+2. `BrowserCookieExtractor` (via SweetCookieKit) can auto-extract from Safari/Chrome/Edge/Firefox
+3. `CredentialStore` saves to macOS Keychain (service: "LinkLion", account: "li_at")
+4. `LinkedInClient` reads from Keychain on initialization
+5. Cookie attached to all HTTP requests as `Cookie: li_at=...`
+6. CSRF tokens generated per-request for Voyager API calls
+7. Cookie expires after ~1 year, requiring re-authentication
 
 ## Anti-Bot Strategy
-
-LinkLion uses multiple strategies to avoid LinkedIn bot detection:
 
 1. **Realistic User-Agent**: Mimics Chrome 120 on macOS
 2. **Rate Limiting**: Built-in delays between requests
 3. **Browser Fallback**: PeekabooClient uses real browser for hard cases
 4. **Vision Parsing**: GeminiVision extracts data from screenshots when HTML fails
-5. **Dual Messaging**: `preferPeekabooMessaging` flag for browser-based messaging vs API
+5. **Dual Messaging**: `preferPeekabooMessaging` flag for browser-based messaging vs Voyager API
+6. **Cookie Extraction**: BrowserCookieExtractor pulls cookies directly from browser databases
 
 ## MCP Server Configuration
 
@@ -196,7 +259,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "linklion": {
+    "linkedin": {
       "command": "/usr/local/bin/linkedin-mcp",
       "args": [],
       "disabled": false
@@ -207,6 +270,6 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 After configuration:
 1. Restart Claude Desktop
-2. Verify "linklion" appears in MCP server list
+2. Verify "linkedin" appears in MCP server list
 3. Authenticate via `linkedin_configure` tool with your `li_at` cookie
-4. Use tools like `linkedin_get_profile` for AI-powered LinkedIn research
+4. Use any of the 12 tools for AI-powered LinkedIn research, posting, and networking
